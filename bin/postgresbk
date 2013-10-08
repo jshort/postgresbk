@@ -1,0 +1,154 @@
+#!/usr/bin/env ruby
+=begin
+    This executable will allow the user to manage a postgres database (logical database) 
+    and allow it to be quiesced and unquiesced as well as backed up and restored (to last backup).
+=end
+require 'rubygems'
+require 'optparse'
+require 'postgresbk'
+
+######################################################################################
+###########################  Parse Input Data ########################################
+######################################################################################
+
+## Parse input or throw up help
+
+#set defaults in initial hash and optparse will override if passed
+RequiredFlags = [:database, :user]
+Commands = ['quiesce', 'unquiesce', 'backup', 'restore']
+options = {:port => 5432, :password => nil, :bkdir => "/tmp/postgresbk", :waittime => 30, :kill_at_timeout => false}
+
+op = OptionParser.new do |x|
+    x.banner = 'Usage: postgresbk [OPTIONS] COMMAND'
+    x.separator ''
+    x.separator 'Notes: '
+    x.separator '    This tool should be run as admin database user (usually user \'postgres\') or a user with sudo privileges'
+    x.separator '    Also, either pg_hba.conf should be configured such that the user specified in the flags does not need a password '
+    x.separator '    to connect (ie. \'trust\' method) or ~/.pgpass should be configured to, again, allow access as the specified user.'
+    x.separator '    Additionally, the user running this executable should have rw access to the directory specified in the backup '
+    x.separator '    flag.'
+    x.separator ''
+    x.separator 'Commands: '
+    x.separator '    quiesce                          Quiesce the specified database'
+    x.separator '    unquiesce                        Unquiesce the specified database'
+    x.separator '    backup                           Back up the specified database'
+    x.separator '    restore                          Restore the specified database to last backup'
+    x.separator ''
+    x.separator 'Required flags: '
+
+    x.on("-d", "--database=DBNAME", "The database on which to operate") do |db|
+      if db[0] == '-'
+        raise OptionParser::MissingArgument
+      end
+      options[:database] = db
+    end
+
+    x.on("-u", "--user=USER", "The user to connect with (must be admin user, ie. 'postgres')") do |user|
+      if user[0] == '-'
+        raise OptionParser::MissingArgument
+      end
+      options[:'user'] = user
+    end
+
+    x.separator ''
+    x.separator 'Common options: '
+
+    # Refactor: allowing a password to be passed in on the command line is not secure; user ~/.pgpass or pg_hba.conf instead
+
+    # x.on("-W", "--password=PASSWD", "The password of the user specified above") do |passwd|
+    #   if passwd[0] == '-'
+    #     raise OptionParser::MissingArgument
+    #   end
+    #   options[:'password'] = passwd
+    # end
+
+    x.on("-p", "--port=PORT", "The port to use to connect to postgres (default: 5432)") do |port|
+      if port[0] == '-'
+        raise OptionParser::MissingArgument
+      end
+      options[:'port'] = port
+    end
+
+
+    x.on("--backup-dir=BACKUPDIR", "The *absolute* filesystem location to store/retrieve backups (default: /tmp/postgresbk)") do |bkdir|
+      if bkdir[0] == '-'
+        raise OptionParser::MissingArgument
+      end
+      options[:'bkdir'] = bkdir
+    end
+
+    x.on("--wait-for-quiesce=WAITTIME", "The time (in seconds) to wait during a quiesce call for", "existing connections to end (default: 30)") do |wt|
+      if wt[0] == '-'
+        raise OptionParser::MissingArgument
+      end
+      options[:waittime] = wt.to_i
+    end
+
+    x.on("-k", "--kill-at-timeout", "If this is set, then existing connections will be killed at the", "end of the specified or default timeout") do 
+      options[:kill_at_timeout] = true
+    end
+
+    x.on("-h", "--help", "Show this message") do 
+      puts op
+      exit 0
+    end
+
+    x.on("-v", "--version", "Show version") do 
+      puts "postgresbk version #{Gem.loaded_specs["postgresbk"].version}"
+      exit 0
+    end
+end
+
+
+# do input validation and check leftovers for proper commands
+begin
+  # parse options, parse! removes elements from ARGV so leftovers are positional arg(s)
+  op.parse!(ARGV)
+  missing = RequiredFlags.select { |p| options[p].nil? }
+  if not missing.empty?
+    puts "###############  Missing options : #{missing.join ', '}  ###############"
+    puts ""
+    puts op
+    exit 1
+  elsif ARGV.size != 1 || !(Commands.include? ARGV[0])
+    # being in this block means there is either no positional arguments/commands or that the command sent is invalid
+    puts "###############  Only one command is allowed of the following : #{Commands.join ', '}  ###############"
+    puts ""
+    puts op
+    exit 1
+  end
+  currentCommand = ARGV[0]
+    
+rescue OptionParser::InvalidOption, OptionParser::MissingArgument
+  puts "###############  #{$!.to_s}  ###############"
+  puts ""
+  puts op
+  exit 1
+end
+
+######################################################################################
+###########################  Main Script  ############################################
+######################################################################################
+
+# startTime = Time.new
+# puts "Start time: #{startTime}"
+
+begin
+  Postgresbk.new(options).send( currentCommand )
+rescue NotImplementedError
+  puts "Command #{currentCommand} is not implemented in current version of the postgresbk gem"
+  exit 1
+rescue Exception => e  
+  puts e.inspect  
+  #puts e.backtrace.inspect  
+  exit 1
+end
+
+# stopTime = Time.new
+
+# puts "Stop time: #{stopTime}"
+
+# puts "Total time: #{ (stopTime - startTime) / 60.0} minutes"
+
+
+exit 0

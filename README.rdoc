@@ -1,0 +1,109 @@
+= postgresbk
+
+== DESCRIPTION:
+
+The postgresbk is an executable gem used for the following operations on a PostgreSQL database: quiesce, unquiesce, backup and restore.  Quiesce and unquiesce are idempotent and atomic.  Backup and restore are not idempotent, but are also atomic as they always leave the state of the system the same as when it began, including during exception conditions.  Backup and restore can be called if the database is not in a quiesced state, though additional ramifications may arise.
+
+Quiesce means to put the database in a state where it no longer accepts new connections and it has two additional actions: 1) If, within the default or specified wait time, the currently active connections do not finish, postgresbk will fail and return 1 and put the database back in an unquiesced state or 2) if a kill flag is set, it will kill the currently connections to the specified database at the end of the wait period.
+
+Unquiesce just puts the database back into a state to continue normal operations.
+
+Backup takes a pg_dump of the specified database and stores it in the default location or the specified location with a timestamped and specific database labled filename.
+
+Restore takes the last (temporally) backup from the default/specified location and restore the database to the state of that backup.  It is assumed that the current state of the database is corrupt or empty such that it drops the database and reloads the backup contents so any writes since the last backup are lost.  A new feature could implement a restore_merge operation.
+
+
+== FEATURES/PROBLEMS:
+
+* TODO: Implement a better way to do backup/restore in the event the database is currently quiesced.  Currently there is a split second where connections could be made during the backup and restore process.  This depends on the performance of the system, obviously.
+* TODO: Implement restore_merge command that doesn't clean the database but, instead, merges the backup into the current state of the database.  To be used with NON-corrupt databases.  For an empty database restore_merge would be equivalent to restore.
+* TODO: Implement support for relative directories for the backup directory.
+
+== SYNOPSIS:
+
+*Dependencies:*
+
+* ruby 1.9.3p194 or 2.0.0-p247
+* pg gem (for postgres which is installed as part of gem)
+* various built in file util modules
+
+*Sample* *Usage:*
+
+To quiesce with out automatically killing current connections after 30s
+
+  > postgresbk -d mydatabase -u postgres quiesce
+
+To quiesce with killing current connections after 30s
+
+  > postgresbk -d mydatabase -u postgres -k quiesce
+
+To quiesce with killing current connections after 90s
+
+  > postgresbk -d mydatabase -u postgres -k --wait-for-quiesce 90 quiesce
+
+To unquiesce
+
+  > postgresbk -d mydatabase -u postgres unquiesce
+
+To backup to the current users home directory
+
+  > postgresbk -d mydatabase -u postgres --backup-dir /home/myuser backup
+
+To restore from the default directory (/tmp/postgresbk)
+
+  > postgresbk -d mydatabase -u postgres restore
+
+*Caveats:*
+
+* This gem works with ruby-2.0.0-p247 however, when rubygems intalled the pg gem, it put the pg_ext.bundle file in the wrong directory which causes the following error:
+    `require': cannot load such file -- pg_ext (LoadError)
+* To fix this, execute 
+    >find ~/.rvm/gems -name "pg_ext.bundle"
+* There should be a ruby-2.0.0-p247 version of the file and it needs to be in:
+    ~/.rvm/gems/ruby-2.0.0-p247/gems/pg-0.16.0/lib/pg_ext.bundle
+* This behavior is not present using ruby 1.9.3 and either the 0.14.1 or 0.16.0 versions of the pg gem.
+
+
+== REQUIREMENTS:
+
+* Assumptions:
+  * A postgres 9.x+ server is running and configured
+  * The executable should be run as a user that has all the PostgreSQL executables on his/her path (psql, pg_dump, pg_restore at bare minimum).
+  * For connections to the database as the user specified with the -u flag, it is assumed that either ~/.pgpass of the user executing the postgresbk executable is setup for password-less access or that pg_hba.conf is setup such that the connecting user's auth method is 'trust'.  Meaning userA can execute this tool if user postgres's password is setup in ~/.pgpass similiar to the following:
+      *:*:*:postgres:thisisnotagoodpassword
+  * or if userA executes this tool if the follow line is 'high up' in pg_hba.conf:
+      local all postgres trust
+  * Also, it is assumed that the user specified by the -u/--user flags is a superuser of the PostgreSQL database (there is a distinction between the user running the executable and the user specified by -u/--user but it could be the same user, ie. postgres, if the postgres user had a ruby environment configured)
+
+
+== INSTALL:
+
+* Currently this gem is not submitted to rubygems
+* In the postgresbk root directory, run:
+    > gem build postgresbk.gemspec
+    > gem install postgresbk-*.gem (depending on the current version)
+
+== LICENSE:
+
+(The MIT License)
+
+Copyright (c) 2013 jshort
+
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of this software and associated documentation files (the
+'Software'), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sublicense, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to
+the following conditions:
+
+The above copyright notice and this permission notice shall be
+included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED 'AS IS', WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
